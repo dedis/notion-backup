@@ -2,12 +2,15 @@
 // in an encrypted form. It also offers the mean to decrypt an encrypted file.
 //
 // The archives are save as ".zip.aes" files, with their correcsponding
-// ".zip.iv" input vectors needed for decryption. The filename uses the block id
-// and the timedate.
+// ".zip.iv" input vectors needed for decryption. The filename uses the hash of
+// the block id and the timedate.
 //
 // Archive request example:
 //   go run mod.go -id BLOCK_ID -token NOTION_TOKEN_V2 \\
 //                 -key 64_HEX_KEY -path EXPORT_FOLDER_PATH
+//
+// The decrypt function will expect a *.iv file next to the encrypted file.
+//
 // Decrypt example:
 //   go run mod.go -decrypt -path /tmp/xxx.zip.aes -key 64_HEX_KEY
 //
@@ -18,6 +21,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -111,7 +115,12 @@ func main() {
 		} else if taskResp.Results[0].State == "success" {
 			fmt.Fprintln(printer, "Done!")
 
-			fileName := blockID + "-" + time.Now().Format("2006-01-02-150405") + ".zip"
+			hash := sha256.New()
+			hash.Write([]byte(blockID))
+			blockIDHash := hash.Sum(nil)
+			prefix := hex.EncodeToString(blockIDHash)
+
+			fileName := prefix + "-" + time.Now().Format("2006-01-02-150405") + ".zip"
 			sourceURL := taskResp.Results[0].Status.ExportURL
 
 			err = downloadFile(sourceURL, filepath.Join(path, fileName), key)
@@ -247,7 +256,8 @@ func downloadFile(sourceURL, path string, key []byte) error {
 	buf := make([]byte, 1024)
 	stream := cipher.NewCTR(block, iv)
 
-	fmt.Fprintln(printer, "downloading from", sourceURL)
+	// For security reasons, lets not print the URL, as anyone can use it
+	// fmt.Fprintln(printer, "downloading from", sourceURL)
 
 	resp, err := http.Get(sourceURL)
 	if err != nil {
